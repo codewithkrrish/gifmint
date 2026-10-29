@@ -5,7 +5,7 @@ import { clampTrim, trimDuration, snapToPosition, MIN_CLIP_SECONDS } from './tri
 import { formatBytes, compareSizes } from './format.js';
 import {
   FPS_PRESETS, WIDTH_PRESETS, clampFps, frameCountFor, frameDelayMs,
-  frameTimes, outputDimensions, gifOptions, clipWarning,
+  frameTimes, outputDimensions, gifOptions, clipWarning, GIFJS_WORKER_URL,
 } from './gifbuild.js';
 
 const $ = (id) => document.getElementById(id);
@@ -59,7 +59,25 @@ const state = {
   gif: null,
   resultUrl: null,
   trimPlaying: false,
+  encodeWatchdog: null,
 };
+
+function clearEncodeWatchdog() {
+  if (state.encodeWatchdog !== null) {
+    window.clearInterval(state.encodeWatchdog);
+    state.encodeWatchdog = null;
+  }
+}
+
+function failEncode(message) {
+  clearEncodeWatchdog();
+  try { if (state.gif && typeof state.gif.abort === 'function') state.gif.abort(); } catch { /* ignore */ }
+  state.gif = null;
+  state.converting = false;
+  els.convertBtn.disabled = false;
+  els.cancelBtn.hidden = true;
+  setStatus(message);
+}
 
 function safePlay() {
   try {
@@ -253,7 +271,33 @@ async function convert() {
   state.trimPlaying = false;
   els.playTrimBtn.textContent = 'Play trimmed segment';
 
-  const gif = new window.GIF(options);
+  /* gif.js runs its encoder in a Web Worker, and browsers refuse
+     cross-origin worker scripts — so the CDN worker URL stalls
+     encoding forever with no error. Fetch the worker source
+     (jsDelivr serves it with open CORS) and run it from a
+     same-origin blob URL instead. If the fetch fails, keep the CDN
+     URL and let the watchdog below surface a clear error rather
+     than hanging. */
+  let workerScript = options.workerScript;
+  try {
+    const res = await fetch(GIFJS_WORKER_URL);
+    if (res.ok) {
+      const text = await res.text();
+      workerScript = URL.createObjectURL(
+        new Blob([text], { type: 'application/javascript' }),
+      );
+    }
+  } catch { /* fall through to the CDN URL + watchdog */ }
+  let gif;
+  try {
+    gif = new window.GIF({ ...options, workerScript });
+  } catch (err) {
+    state.converting = false;
+    els.convertBtn.disabled = false;
+    els.cancelBtn.hidden = true;
+    setStatus(`The GIF encoder could not start: ${err && err.message ? err.message : 'worker failed to load'}. Reload the page and try a shorter clip.`);
+    return;
+  }
   state.gif = gif;
   const times = frameTimes(t.start, t.end, fps);
   const delay = frameDelayMs(fps);
@@ -281,11 +325,24 @@ async function convert() {
     return;
   }
   els.progressText.textContent = 'Encoding GIF…';
+  let lastEncodeProgress = Date.now();
   gif.on('progress', (p) => {
+    lastEncodeProgress = Date.now();
     els.progressBar.style.width = `${Math.round(50 + p * 50)}%`;
     els.progressText.textContent = `Encoding GIF… ${Math.round(p * 100)}%`;
   });
+  /* Never hang silently: if the encoder reports nothing for 60
+     seconds, it is stalled (e.g. its worker never started) — abort
+     and say so instead of leaving the bar frozen at half. */
+  clearEncodeWatchdog();
+  state.encodeWatchdog = window.setInterval(() => {
+    if (!state.converting || state.cancelled) { clearEncodeWatchdog(); return; }
+    if (Date.now() - lastEncodeProgress > 60000) {
+      failEncode('Encoding stalled — the encoder worker did not report progress for 60 seconds. Reload the page and try again with a shorter clip or a smaller width.');
+    }
+  }, 10000);
   gif.on('finished', (blob) => {
+    clearEncodeWatchdog();
     if (state.cancelled) { finishCancelled(); return; }
     state.converting = false;
     els.convertBtn.disabled = false;
@@ -309,6 +366,7 @@ async function convert() {
 }
 
 function finishCancelled() {
+  clearEncodeWatchdog();
   state.converting = false;
   state.gif = null;
   els.convertBtn.disabled = false;
@@ -386,7 +444,14 @@ els.cancelBtn.addEventListener('click', () => {
   state.cancelled = true;
   try { if (state.gif && typeof state.gif.abort === 'function') state.gif.abort(); } catch { /* ignore */ }
   if (!state.converting) finishCancelled();
-  else setStatus('Cancelling…');
+  else {
+    setStatus('Cancelling…');
+    /* gif.js abort can itself stall when its workers never
+       started — never leave the user stuck on "Cancelling…". */
+    window.setTimeout(() => {
+      if (state.cancelled && state.converting) finishCancelled();
+    }, 1500);
+  }
 });
 els.convertAnotherBtn.addEventListener('click', () => {
   els.resultWrap.hidden = true;
