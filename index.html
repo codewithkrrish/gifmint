@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GIFMint — Video to GIF Converter</title>
+<meta name="description" content="GIFMint turns a short video clip into a GIF entirely in your browser: trim the range, pick frame rate and width, preview the loop, and download the GIF. Nothing is uploaded.">
+<link rel="canonical" href="https://gifmint-app.vercel.app">
+<meta property="og:title" content="GIFMint — Video to GIF Converter">
+<meta property="og:description" content="Trim a video, pick frame rate and width, and convert it to a GIF in your browser. Nothing is uploaded.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://gifmint-app.vercel.app">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="GIFMint — Video to GIF Converter">
+<meta name="twitter:description" content="Trim a video, pick frame rate and width, and convert it to a GIF in your browser. Nothing is uploaded.">
+<meta name="theme-color" content="#0B0B0F">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">G</span><span class="brand-name">GIFMint</span></div>
+  <p class="tagline">Turn a short video clip into a GIF, entirely in your browser. No uploads, no accounts, no install.</p>
+</header>
+
+<main class="layout">
+  <section class="panel" aria-label="Video and trim">
+    <h2>1. Your video</h2>
+    <div class="dropzone" id="dropZone" role="button" tabindex="0" aria-label="Choose a video file">
+      <p class="drop-title">Drop a video here, or click to choose one</p>
+      <p class="muted">MP4 and WebM work best. You can also paste a copied video file into the page.</p>
+      <input type="file" id="fileInput" accept="video/*" hidden>
+    </div>
+    <p class="muted" id="videoEmptyNote">No video loaded yet. Your video never leaves this device.</p>
+    <p class="selected" id="videoNameText"></p>
+    <p class="muted" id="videoMetaText"></p>
+    <p class="muted" id="originalSizeText"></p>
+    <video id="videoPlayer" controls playsinline preload="metadata"></video>
+
+    <h2>2. Trim</h2>
+    <p class="muted">Drag the sliders, type exact seconds, or play the video and use the quick-set buttons to mark the range.</p>
+    <label class="field">Start (seconds)
+      <input type="range" id="startRange" min="0" max="0" step="0.1" value="0" disabled>
+      <input type="number" id="startInput" min="0" step="0.1" value="0.0" disabled>
+    </label>
+    <label class="field">End (seconds)
+      <input type="range" id="endRange" min="0" max="0" step="0.1" value="0" disabled>
+      <input type="number" id="endInput" min="0" step="0.1" value="0.0" disabled>
+    </label>
+    <p class="selected" id="trimReadout">0:00.0 to 0:00.0</p>
+    <p class="muted" id="clipDurationText">No clip selected yet.</p>
+    <div class="row">
+      <button type="button" class="btn secondary" id="setStartBtn" disabled>Set start to current position</button>
+      <button type="button" class="btn secondary" id="setEndBtn" disabled>Set end to current position</button>
+      <button type="button" class="btn secondary" id="playTrimBtn" disabled>Play trimmed segment</button>
+    </div>
+    <p class="muted">Keyboard: Space plays or pauses the trimmed segment, S sets the start, E sets the end, C converts. Shortcuts do nothing while you are typing in a field.</p>
+  </section>
+
+  <section class="panel" aria-label="GIF settings and conversion">
+    <h2>3. GIF settings</h2>
+    <label class="field">Frame rate
+      <select id="fpsSelect"></select>
+    </label>
+    <label class="field">Custom frame rate (1–30 fps, only when Custom is chosen)
+      <input type="number" id="fpsCustomInput" min="1" max="30" step="1" value="12" disabled>
+    </label>
+    <label class="field">Output width
+      <select id="widthSelect"></select>
+    </label>
+    <p class="muted">Height follows the video's aspect ratio automatically.</p>
+    <label class="field">Quality
+      <select id="qualitySelect">
+        <option value="5">High quality (larger file)</option>
+        <option value="10" selected>Balanced</option>
+        <option value="20">Smaller file (lower quality)</option>
+      </select>
+    </label>
+    <label class="field check"><input type="checkbox" id="loopToggle" checked> Loop the GIF forever</label>
+    <p class="selected" id="outputEstimateText">Load a video to see the frame estimate.</p>
+    <p class="warning" id="trimWarningText" hidden></p>
+
+    <h2>4. Convert</h2>
+    <p class="status" id="statusText">Choose a video to get started.</p>
+    <div class="row">
+      <button type="button" class="btn" id="convertBtn" disabled>Convert to GIF</button>
+      <button type="button" class="btn secondary" id="cancelBtn" hidden>Cancel</button>
+    </div>
+    <div class="progress" id="progressWrap" hidden>
+      <div class="progress-bar" id="progressBar"></div>
+      <p class="muted" id="progressText"></p>
+    </div>
+
+    <div id="resultWrap" hidden>
+      <h2>Your GIF</h2>
+      <img id="resultGif" alt="Converted GIF preview">
+      <p class="muted" id="resultMetaText"></p>
+      <p class="muted" id="compareText"></p>
+      <div class="row">
+        <a class="btn" id="downloadBtn" href="#" download="gifmint.gif">Download GIF</a>
+        <button type="button" class="btn secondary" id="convertAnotherBtn">Convert again with new settings</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="How it works and honest notes">
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li>Choose a video from your device. It is never uploaded anywhere.</li>
+      <li>Trim the exact segment you want with the sliders or the quick-set buttons.</li>
+      <li>Pick a frame rate, width and quality, then preview the trimmed segment looped.</li>
+      <li>Press Convert to GIF, watch the progress, then play back and download the result.</li>
+    </ol>
+
+    <h2>Honest notes</h2>
+    <p><strong>Keep clips short.</strong> Clips under about 15 seconds convert fast and stay small. Longer clips still work, but encoding slows down and the tab uses much more memory — a warning appears above the Convert button when a clip crosses that line.</p>
+    <p><strong>GIFs are big for what they are.</strong> GIF compression is old and inefficient, so a GIF can end up larger than the video it came from. Narrower widths and lower frame rates are the two levers that actually shrink the file; the comparison under your finished GIF shows the honest result.</p>
+    <p><strong>Encoding runs in your browser.</strong> GIFMint uses gif.js (version 0.2.0, loaded from jsDelivr) with a background worker. If that script cannot load — for example, with no connection — conversion is unavailable and the page says so; your video still never leaves the device.</p>
+    <p><strong>Input support varies by browser.</strong> MP4 and WebM cover nearly everything, but whether a particular video decodes depends on your browser's codecs, not on GIFMint. If a file loads but shows no picture, try the same clip in another browser or re-export it as MP4.</p>
+    <p><strong>Keep the tab open while converting.</strong> Capturing frames means seeking through your video one frame at a time; switching away can slow it down, and closing the tab loses the unfinished GIF. Finished GIFs are yours to download — nothing is stored after you leave.</p>
+    <p class="muted">No audio is carried into a GIF — the format has no sound track, so the result is always silent.</p>
+  </section>
+</main>
+<footer class="footer">
+  <p>Built by krrish · <a href="https://github.com/codewithkrrish/gifmint">GitHub</a> · <a href="https://www.instagram.com/krrishx.ai">Instagram</a></p>
+  <p>Your videos are processed locally in your browser and never uploaded.</p>
+</footer>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
